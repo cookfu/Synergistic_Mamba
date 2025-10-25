@@ -3,6 +3,7 @@ Low-light images suffer from severe degradations including diminished visibility
 # Train
 ```shell
 bash train.sh
+
 # Test
 ```shell
 bash test.sh
