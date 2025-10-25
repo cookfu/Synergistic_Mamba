@@ -1,0 +1,187 @@
+
+name: LOLv2_Real
+# name: debug_FeMaSR
+model_type: FeMaSRModel 
+scale: &upscale 1
+num_gpu: 1 # set num_gpu: 0 for cpu mode
+manual_seed: 1234
+
+# dataset and data loader settings
+datasets:
+  train:
+    # name: LOLv1_Train
+    # dataroot_gt: /root/shared-nvme/lowlight_data/LOLv1/our485/gt
+    # dataroot_lq: /root/shared-nvme/lowlight_data/LOLv1/our485/input
+    
+    name: LOLv2_Real_Train
+    dataroot_gt: /root/shared-nvme/lowlight_data/LOLv2/LOLv2/Real/gt
+    dataroot_lq: /root/shared-nvme/lowlight_data/LOLv2/LOLv2/Real/input
+
+    # name: LOLv2_Syn_Train
+    # dataroot_gt: /root/shared-nvme/lowlight_data/LOLv2/LOLv2/Synthetic/Train/gt
+    # dataroot_lq: /root/shared-nvme/lowlight_data/LOLv2/LOLv2/Synthetic/Train/input
+
+    # name: LSRW_Huawei_Train
+    # dataroot_gt: /root/shared-nvme/lowlight_data/Huawei/Train/Huawei/high
+    # dataroot_lq: /root/shared-nvme/lowlight_data/Huawei/Train/Huawei/low
+
+    # name: Dense_Haze
+    # dataroot_gt: /root/shared-nvme/Dehanze_dataset/Dense_Haze/train/gt
+    # dataroot_lq: /root/shared-nvme/Dehanze_dataset/Dense_Haze/train/hazy
+    
+    type: PairedImageDataset
+    io_backend:
+      type: disk
+
+    gt_size: 256
+    use_resize_crop: False
+    use_flip: False
+    use_rot: False
+
+    # data loader
+    use_shuffle: true
+    geometric_augs: True
+    batch_size_per_gpu: &bsz 4
+    num_worker_per_gpu: 6
+    dataset_enlarge_ratio: 1
+
+    prefetch_mode: cpu
+    num_prefetch_queue: *bsz
+
+  val:
+    # name: LOLv1_Valid
+    # dataroot_gt: /root/shared-nvme/lowlight_data/LOLv1/eval15/gt
+    # dataroot_lq: /root/shared-nvme/lowlight_data/LOLv1/eval15/input
+    
+    name: LOLv2_Real_Valid
+    dataroot_gt: /root/shared-nvme/lowlight_data/LOLv2/LOLv2/Real_captured/Test/gt
+    dataroot_lq: /root/shared-nvme/lowlight_data/LOLv2/LOLv2/Real_captured/Test/input
+
+    # name: LOLv2_Syn_Valid
+    # dataroot_gt: /root/shared-nvme/lowlight_data/LOLv2/LOLv2/Synthetic/Test/gt
+    # dataroot_lq: /root/shared-nvme/lowlight_data/LOLv2/LOLv2/Synthetic/Test/input
+    # dataroot_gt: /root/shared-nvme/WaveMamba/single_picture/gt
+    # dataroot_lq: /root/shared-nvme/WaveMamba/single_picture/input
+
+    # name: LSRW_Huawei_Valid
+    # dataroot_gt: /root/shared-nvme/lowlight_data/Huawei/Test/Huawei/high
+    # dataroot_lq: /root/shared-nvme/lowlight_data/Huawei/Test/Huawei/low
+
+    # name: Dense_Haze_valid
+    # dataroot_gt: /root/shared-nvme/Dehanze_dataset/Dense_Haze/test/gt
+    # dataroot_lq: /root/shared-nvme/Dehanze_dataset/Dense_Haze/test/hazy
+    
+    type: PairedImageDataset
+#    gt_size: 512
+    io_backend:
+      type: disk
+    geometric_augs: True
+    use_resize_crop: False
+    use_flip: False
+    use_rot: False
+
+# network structures
+network_g:
+  type: SynMamba
+  in_chn: 3
+  wf: 24
+  n_blocks: [1,1,1]
+  ffn_scale: 4
+  high_heads: [2,4,8]
+  high_blocks: [4,4,4]
+
+network_d:
+  type: UNetDiscriminatorSN
+  num_in_ch: 3
+
+# path
+path:
+  pretrain_network_hq: ~
+  pretrain_network_g: ~
+  pretrain_network_d: ~
+  strict_load: false
+  resume_state: ~ 
+
+
+# training settings
+train:
+  optim_g:
+    type: AdamW
+    lr: !!float 0.0004
+    weight_decay: !!float 1e-3
+    betas: [0.9, 0.99]
+  optim_d:
+    type: Adam
+    lr: !!float 4e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+
+  scheduler:
+    type: CosineAnnealingRestartCyclicLR
+    periods: [2000, 120000]
+    restart_weights: [1, 1]
+    eta_mins: [0.0004, 0.000001]
+
+  total_iter: 125100
+  warmup_iter: -1  # no warm up
+
+  # losses
+  pixel_opt:
+    # type: L1Loss
+    type: MSELoss
+    loss_weight: 1.0 
+    reduction: mean
+    
+  raw_opt:
+    # type: L1Loss
+    type: MSELoss
+    loss_weight: 0.5
+    reduction: mean
+
+  vgg_opt:
+    type: VGGLoss
+    loss_weight: 0.2
+
+  ssim_opt:
+    type: SSIM
+    loss_weight: !!float 0.2
+
+  net_d_iters: 0
+  net_d_init_iters: !!float 0 
+
+# validation settings·
+val:
+  val_freq: !!float 100
+  save_img: False
+  start_val_iter: 10000
+
+  key_metric: psnr
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: psnr 
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: ssim 
+      crop_border: 0
+      test_y_channel: false
+    lpips:
+      type: lpips
+      better: lower
+
+# logging settings
+logger:
+  print_freq: 10
+  save_checkpoint_freq: !!float 100
+  save_latest_freq: !!float 1e5
+  show_tf_imgs_freq: !!float 10000
+  use_tb_logger: true
+
+# wandb:
+    # project: ESRGAN
+    # resume_id: ~
+
+dist_params:
+  backend: nccl
+  port: 16500 #29500
+find_unused_parameters: true
